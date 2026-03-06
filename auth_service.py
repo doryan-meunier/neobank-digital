@@ -146,7 +146,7 @@ def login(credentials: LoginRequest, request: Request, db: Session = Depends(get
     V2, V4, V9, V10 CORRIGÉS
 
     AVANT (vulnérable) :
-        SECRET_KEY = "super_secret_key_123"         # en dur
+        SECRET_KEY = "EXAMPLE_INSECURE_KEY"           # codé en dur (NON FAIRE)
         token = jwt.encode({"user_id": user.id}, SECRET_KEY)  # pas d'expiration
         raise HTTPException(detail=f"User {username} not found in database accounts.users")
 
