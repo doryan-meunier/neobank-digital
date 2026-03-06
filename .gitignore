@@ -70,3 +70,8 @@ docker-compose.override.yml
 # ─── Couverture de tests ──────────────────────────────────────────────────────
 coverage/
 .nyc_output/
+
+# ─── Artefacts locaux temporaires ─────────────────────────────────────────────
+pytest_artifacts/
+pytest_log.txt
+*.db
