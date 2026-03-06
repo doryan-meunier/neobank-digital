@@ -190,6 +190,10 @@ router.put(
   handleValidationErrors,
   async (req, res, next) => {
     try {
+      // Vérifie que l'utilisateur est authentifié
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentification requise.' });
+      }
       const userId = req.user.id;
 
       // V6 CORRIGÉ : Extraction des seuls champs autorisés
@@ -225,6 +229,10 @@ router.post(
   handleValidationErrors,
   async (req, res, next) => {
     try {
+      // Vérifie que l'utilisateur est authentifié
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentification requise.' });
+      }
       const { to_account, amount, description } = req.body;
       // description est déjà sanitisée par customSanitizer dans les règles de validation
 

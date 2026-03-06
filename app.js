@@ -254,11 +254,13 @@ app.use((err, req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Démarrage du serveur
+// 9. Démarrage du serveur (uniquement quand exécuté directement, pas via require)
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  logger.info(`Serveur NeoBank démarré`, { event: 'server_start', port: PORT, env: process.env.NODE_ENV });
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    logger.info(`Serveur NeoBank démarré`, { event: 'server_start', port: PORT, env: process.env.NODE_ENV });
+  });
+}
 
 module.exports = app;

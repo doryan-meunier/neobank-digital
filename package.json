@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "test": "jest --coverage",
+    "test": "jest --coverage --forceExit",
     "lint": "eslint . --ext .js",
     "audit:check": "npm audit --audit-level=moderate",
     "audit:report": "npm audit --json > npm-audit-report.json",
