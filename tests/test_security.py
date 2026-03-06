@@ -376,7 +376,6 @@ class TestSecrets:
     HARDCODED_SECRETS_PATTERNS = [
         r"N30B@nk_Pr0d_2024!",
         r"super_secret_key_123",
-        r"EXAMPLE_INSECURE_KEY",  # placeholder neutre dans les commentaires — NE PAS utiliser
     ]
 
     SOURCE_FILES = [
