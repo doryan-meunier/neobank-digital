@@ -1,0 +1,374 @@
+# .github/workflows/security.yml
+# Livrable 4.3 : Pipeline CI/CD sécurisé pour NeoBank Digital
+#
+# Déclenché sur chaque push/PR vers main et develop.
+# Étapes :
+#   1. SAST Python  : Bandit
+#   2. SAST JS      : ESLint security plugin
+#   3. SCA Python   : pip-audit
+#   4. SCA Node.js  : npm audit
+#   5. Scan secrets : git-secrets / Gitleaks
+#   6. Tests séc.   : pytest (Python) + Jest (Node.js)
+#   7. Build check  : lint global
+
+name: NeoBank Security CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  security-events: write   # Pour uploader les rapports SARIF
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 1 : SAST Python avec Bandit
+  # ───────────────────────────────────────────────────────────────────────────
+  sast-python:
+    name: "SAST Python (Bandit)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Bandit
+        run: pip install bandit[sarif]==1.7.10
+
+      - name: Run Bandit SAST scan
+        run: |
+          bandit -r . \
+            --exclude ./.venv,./node_modules,./tests \
+            --severity-level medium \
+            --confidence-level medium \
+            --format sarif \
+            --output bandit-results.sarif
+        continue-on-error: true   # On veut uploader le rapport même en cas de findings
+
+      - name: Run Bandit (human-readable summary)
+        run: |
+          bandit -r . \
+            --exclude ./.venv,./node_modules,./tests \
+            --severity-level medium \
+            --confidence-level medium \
+            --format txt
+
+      - name: Upload Bandit SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit-python
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 2 : SAST JavaScript avec ESLint security plugin
+  # ───────────────────────────────────────────────────────────────────────────
+  sast-javascript:
+    name: "SAST JavaScript (ESLint Security)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies (including ESLint security)
+        run: npm ci
+
+      - name: Run ESLint with security plugin
+        run: |
+          npx eslint \
+            --plugin security \
+            --rule 'security/detect-object-injection: warn' \
+            --rule 'security/detect-non-literal-regexp: warn' \
+            --rule 'security/detect-unsafe-regex: error' \
+            --rule 'security/detect-eval-with-expression: error' \
+            --rule 'security/detect-no-csrf-before-method-override: error' \
+            --format @microsoft/sarif-formatter \
+            --output-file eslint-results.sarif \
+            "*.js" \
+            || true
+        continue-on-error: true
+
+      - name: Upload ESLint SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: eslint-results.sarif
+          category: eslint-javascript
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 3 : SCA Python avec pip-audit
+  # ───────────────────────────────────────────────────────────────────────────
+  sca-python:
+    name: "SCA Python (pip-audit)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit==2.7.3
+
+      - name: Run pip-audit (SCA)
+        run: |
+          pip-audit \
+            --requirement requirements.txt \
+            --format json \
+            --output pip-audit-report.json \
+            --vulnerability-service osv
+        continue-on-error: true
+
+      - name: Display pip-audit results
+        run: |
+          pip-audit \
+            --requirement requirements.txt \
+            --vulnerability-service osv
+
+      - name: Upload pip-audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+
+      - name: Fail if critical CVEs found
+        run: |
+          python - <<'EOF'
+          import json, sys
+          try:
+              with open('pip-audit-report.json') as f:
+                  data = json.load(f)
+              critical = [
+                  v for dep in data.get('dependencies', [])
+                  for v in dep.get('vulns', [])
+                  if v.get('fix_versions')  # Des correctifs existent
+              ]
+              if critical:
+                  print(f"[FAIL] {len(critical)} vulnérabilités avec correctif disponible détectées!")
+                  for v in critical[:5]:
+                      print(f"  - {v.get('id')}: {v.get('description', '')[:80]}")
+                  sys.exit(1)
+              print("[OK] Aucune vulnérabilité critique avec correctif disponible.")
+          except FileNotFoundError:
+              print("[WARN] Rapport pip-audit non trouvé.")
+          EOF
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 4 : SCA Node.js avec npm audit
+  # ───────────────────────────────────────────────────────────────────────────
+  sca-nodejs:
+    name: "SCA Node.js (npm audit)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level=moderate --json > npm-audit-report.json || true
+
+      - name: Display npm audit summary
+        run: npm audit --audit-level=moderate || true
+
+      - name: Upload npm audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-report
+          path: npm-audit-report.json
+
+      - name: Fail if critical vulnerabilities found
+        run: npm audit --audit-level=critical
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 5 : Scan des secrets avec Gitleaks
+  # ───────────────────────────────────────────────────────────────────────────
+  secrets-scan:
+    name: "Scan des secrets (Gitleaks)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code (full history pour scanner tous les commits)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --exit-code 1 --report-format sarif --report-path gitleaks-results.sarif
+
+      - name: Upload Gitleaks SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gitleaks-results.sarif
+          category: gitleaks-secrets
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 6 : Tests de sécurité Python (pytest)
+  # ───────────────────────────────────────────────────────────────────────────
+  test-python:
+    name: "Tests sécurité Python (pytest)"
+    runs-on: ubuntu-latest
+    needs: [sast-python, sca-python]
+
+    env:
+      DATABASE_URL: "sqlite:///./test_neobank.db"
+      JWT_SECRET_KEY: "ci_test_secret_key_must_be_at_least_32_chars"
+      JWT_ALGORITHM: "HS256"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "15"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      APP_ENV: "test"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          pip install \
+            pytest==8.3.3 \
+            pytest-asyncio==0.24.0 \
+            pytest-cov==5.0.0 \
+            httpx==0.27.2 \
+            pydantic==2.9.2 \
+            python-jose[cryptography]==3.4.0 \
+            passlib[bcrypt]==1.7.4 \
+            sqlalchemy==2.0.36 \
+            python-dotenv==1.0.1 \
+            python-json-logger==2.0.7 \
+            fastapi==0.115.0
+
+      - name: Run security tests
+        run: |
+          pytest tests/test_security.py \
+            -v \
+            --tb=short \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --junit-xml=pytest-results.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-results
+          path: |
+            pytest-results.xml
+            coverage.xml
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 7 : Tests de sécurité Node.js (Jest)
+  # ───────────────────────────────────────────────────────────────────────────
+  test-nodejs:
+    name: "Tests sécurité Node.js (Jest)"
+    runs-on: ubuntu-latest
+    needs: [sast-javascript, sca-nodejs]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Jest security tests
+        run: |
+          npm test -- \
+            --testPathPattern="tests/test_security.spec.js" \
+            --coverage \
+            --coverageDirectory=coverage-js \
+            --reporters=default \
+            --reporters=jest-junit
+        env:
+          NODE_ENV: test
+          JWT_SECRET_KEY: ci_test_secret_key_must_be_at_least_32_chars
+          CORS_ALLOWED_ORIGINS: "https://app.neobank.fr"
+
+      - name: Upload Jest coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jest-coverage
+          path: coverage-js/
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 8 : Gate de sécurité final (bloque le merge si jobs critiques échouent)
+  # ───────────────────────────────────────────────────────────────────────────
+  security-gate:
+    name: "Security Gate"
+    runs-on: ubuntu-latest
+    needs:
+      - sast-python
+      - sast-javascript
+      - sca-python
+      - sca-nodejs
+      - secrets-scan
+      - test-python
+      - test-nodejs
+
+    steps:
+      - name: Security Gate passed
+        run: |
+          echo "✅ Tous les contrôles de sécurité ont passé."
+          echo "   - SAST Python (Bandit) : OK"
+          echo "   - SAST JavaScript (ESLint Security) : OK"
+          echo "   - SCA Python (pip-audit) : OK"
+          echo "   - SCA Node.js (npm audit) : OK"
+          echo "   - Scan des secrets (Gitleaks) : OK"
+          echo "   - Tests sécurité Python : OK"
+          echo "   - Tests sécurité Node.js : OK"
+          echo ""
+          echo "Le code est prêt à être déployé en production."

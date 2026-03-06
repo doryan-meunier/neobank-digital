@@ -1,0 +1,60 @@
+# requirements.txt - NeoBank Digital
+# Livrable 3.2 : Dépendances mises à jour (V8)
+#
+# JUSTIFICATION DES MISES À JOUR :
+# ─────────────────────────────────────────────────────────────────────────────
+# fastapi    0.68.0 → 0.115.0  : CVE-2021-32677 corrigé (SSRF via dépendance starlette)
+# pydantic   1.7.0  → 2.9.2    : CVE-2021-29510 corrigé (déni de service)
+# sqlalchemy 1.3.0  → 2.0.36   : CVE-2019-7164 corrigé (injection SQL via certains dialects)
+# python-jose 3.1.0 → 3.4.0   : CVE-2022-29217 corrigé (vérification de signature contournable)
+# requests   2.20.0 → 2.32.3   : CVE-2018-18074 corrigé (divulgation du header Authorization)
+# pyyaml     5.1    → 6.0.2    : CVE-2020-14343 corrigé (exécution de code arbitraire yaml.load)
+# pillow     6.0.0  → 11.0.0   : CVE-2021-23437 corrigé (DoS via images malformées)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── Framework Web ────────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.32.1
+starlette==0.41.2
+
+# ─── Validation des données ───────────────────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# ─── Base de données ──────────────────────────────────────────────────────────
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# ─── Authentification / JWT ───────────────────────────────────────────────────
+python-jose[cryptography]==3.4.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.12
+
+# ─── Sécurité et secrets ──────────────────────────────────────────────────────
+python-dotenv==1.0.1
+boto3==1.35.0          # AWS Secrets Manager (Livrable 3.1)
+cryptography==44.0.0
+
+# ─── HTTP client ──────────────────────────────────────────────────────────────
+requests==2.32.3
+httpx==0.27.2
+
+# ─── Traitement d'images ──────────────────────────────────────────────────────
+pillow==11.0.0
+
+# ─── Configuration ────────────────────────────────────────────────────────────
+pyyaml==6.0.2
+
+# ─── Logging ──────────────────────────────────────────────────────────────────
+structlog==24.4.0
+python-json-logger==2.0.7
+
+# ─── Outils de développement et de sécurité ──────────────────────────────────
+# (À installer dans l'environnement de dev uniquement)
+# bandit==1.7.10        # SAST Python (PHASE 4 / CI/CD)
+# pip-audit==2.7.3      # Scan des dépendances (PHASE 4 / CI/CD)
+# pytest==8.3.3
+# pytest-asyncio==0.24.0
+# httpx==0.27.2         # Client de test pour FastAPI
