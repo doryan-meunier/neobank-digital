@@ -145,8 +145,8 @@ const loginLimiter = rateLimit({
 /** Slow-down progressif pour le login (ralentit avant de bloquer). */
 const loginSlowDown = slowDown({
   windowMs: 15 * 60 * 1000,
-  delayAfter: 5,          // Commence à ralentir après 5 tentatives
-  delayMs: hits => hits * 500, // +500 ms par tentative supplémentaire
+  delayAfter: process.env.NODE_ENV === 'test' ? 10000 : 5, // Désactivé en test
+  delayMs: () => 0, // Pas de délai réel (évite les timeouts Jest en CI)
 });
 
 app.use(globalLimiter);

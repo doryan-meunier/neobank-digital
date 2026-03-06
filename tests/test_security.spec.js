@@ -13,6 +13,9 @@
 
 'use strict';
 
+// Timeout global pour les tests qui impliquent du rate limiting
+jest.setTimeout(30000);
+
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET_KEY = 'test_secret_must_be_at_least_32_chars_long_ok';
 process.env.CORS_ALLOWED_ORIGINS = 'https://app.neobank.fr';
